@@ -1,0 +1,396 @@
+---
+title: 'Relational Social and Economic Attributes'
+author: 'Alessandra Vidal Meza'
+date: '`r Sys.Date()`'
+---
+
+```{r}
+library(here)
+library(janitor)
+library(stringr)
+library(purrr)
+library(tidyverse)
+library(stars)
+library(sf)
+```
+
+Load point coordinates of existing wind projects in the U.S.: 
+```{r}
+# Read tabular data frame
+us_pids <- read_csv(here::here('us_PID_cords_PID1335.csv'))
+us_pids <- as.data.frame(us_pids) 
+# Convert to shapefile data frame with CRS as NAD83
+us_pids_geom <- st_as_sf(us_pids, coords = c('lon', 'lat'), crs = 4269)
+```
+
+# U.S. County and State Data 
+```{r}
+library(tidycensus)
+# census_api_key('INSERT KEY')
+
+# Define vector of states, remove for contigious U.S. 
+us <- unique(fips_codes$state)[1:51]
+us <- us[!us == 'AK']
+us <- us[!us == 'HI']
+
+# Extract polygons of all contigious U.S. counties 
+us_counties <- map_df(us, function(x) {
+  get_acs(geography = 'county', state = x, geometry = TRUE, 
+          variable = 'B19013_001', year = 2020)
+}) 
+
+# Separate single column to two columns
+us_counties_df <- us_counties %>% 
+  tidyr::separate(NAME, sep = ',', into = c('county', 'state'))
+
+# Add U.S. state names
+state_abbre <- tibble(state = state.name) %>%
+  # Add U.S. state abbreviations 
+  bind_cols(tibble(abb = state.abb)) %>% 
+  # Add row with District of Columbia values
+  bind_rows(tibble(state = 'District of Columbia', abb = 'DC'))
+
+us_counties_df <- us_counties_df %>%
+  janitor::clean_names() %>%
+  # Remove left-hand whitespace from variable
+  mutate(state = str_trim(state, side = 'left')) %>%
+  # Join to U.S. state names and abbreviations table
+  left_join(state_abbre, by = 'state') %>%
+  # Remove variables 
+  dplyr::select(-c(estimate, moe, state, variable)) %>%
+  # Rename U.S. state abbreviation variable
+  rename(state = abb) %>%
+  # Set CRS to NAD83
+  st_transform(4269)
+
+# Load data for FIPS county codes
+data(fips_codes)
+
+fips_codes_df <- fips_codes %>%
+  # Remove leading zeros from variable
+  mutate(state_code = str_remove(state_code, '^0+')) %>%
+  # Concatenate columns to extract FIPS
+  mutate(fips = str_c(state_code, '', county_code)) 
+
+us_counties_fips_df <- us_counties_df %>%
+  left_join(fips_codes_df, 
+            # Set relational keys to join by
+            by = c('state' = 'state', 'county' = 'county'))
+
+# Find counties of the project point coordinates 
+pids_counties_df <- st_join(us_pids_geom, us_counties_fips_df, join = st_within)
+
+pids_counties_df <- pids_counties_df %>% 
+  # Select variables of interest
+  dplyr::select(PID, fips, geoid, county, state) %>%
+  # Remove geometry
+  st_drop_geometry()
+
+pids_counties_df_geom <- pids_counties_df %>%
+  # Join to larger U.S. counties data frame
+  left_join(us_counties_fips_df %>% 
+              dplyr::select(geoid, geometry), by = 'geoid') %>%
+  # Remove variable
+  dplyr::select(-c(geoid))
+
+# Check NAs
+# pids_counties_df[is.na(pids_counties_df$fips), ]
+# Drop PID 1011 and PID 1298 since offshore locations
+```
+
+Save as .csv:
+```{r}
+write.csv(pids_counties_df, here::here('US_pids_fips.csv'), row.names = FALSE)
+```
+
+# Disadvantaged Communities
+```{r}
+# Read shapefile data frame
+dac <- st_read(here::here('DAC Shapefiles (v2022c)', 
+                          'DAC Shapefiles (v2022c).shp'))
+
+# Define function to calculate mode
+find_mode <- function(x) {
+  u <- unique(x)
+  tab <- tabulate(match(x, u))
+  u[tab == max(tab)]
+}
+
+dac_df <- as.data.frame(dac) %>%
+  # Convert variable class to factor
+  mutate(fips = as.factor(countyfips)) %>%
+  # Convert variable class to numeric
+  mutate(DACSTS = as.numeric(DACSTS)) %>%
+  # Group by FIPS county code
+  group_by(fips) %>%
+  # Apply function to find mode binary DAC status
+  reframe(dacsts = find_mode(DACSTS)) %>%
+  # Keep first observation for observations with bimodal distribution 
+  distinct(fips, .keep_all = TRUE)
+
+fips_analysis_df <- pids_counties_df_geom %>%
+  # Join to data frame by FIPS county code
+  left_join(dac_df, by = 'fips') %>%
+  # Select variables of interest
+  dplyr::select(PID, fips, county, state, dacsts, geometry) %>%
+  # Convert variable class to factor
+  mutate(fips = as.factor(fips)) %>%
+  # Organize in ascending order
+  arrange(fips)
+
+# Extract vector of FIPS county codes 
+fips_vector <- fips_analysis_df[, 'fips']
+
+# Extract other attributes and group by U.S. county 
+fips_dac <- dac %>% 
+  # Select variables of interest from DAC shapefile data frame
+  dplyr::select(countyfips, fossemplmt, 
+         coalemplmt, outagecnt, energybrdn, outagedur) %>%
+  # Convert variable class to factor
+  mutate(countyfips = as.factor(countyfips)) %>%
+  rename(fips = countyfips) %>%
+  # Keep FIPS county codes also for projects
+  filter(fips %in% fips_vector) %>%
+  # Group by FIPS county codes
+  group_by(fips) %>%
+  # Apply function to find mode of variables of interest
+  reframe(energybrdn = find_mode(energybrdn),
+          fossemplmt = find_mode(fossemplmt),
+          coalemplmt = find_mode(coalemplmt),
+          outagecnt = find_mode(outagecnt),
+          outagedur = find_mode(outagedur)) %>%
+  # Keep unique FIPS county codes
+  distinct(fips, .keep_all = TRUE)
+
+fips_analysis_df <- fips_analysis_df %>% 
+  left_join(fips_dac, by  = 'fips') %>%
+  # Organize in ascending order
+  arrange(PID) %>%
+  # Move variable position in data frame
+  relocate(geometry, .after = last_col())
+```
+
+# Rural Capacity Index
+```{r}
+# Read Excel object
+rci <- readxl::read_excel(here::here('rural-capacity-index',
+                                     'HE_Rural_Capacity_Index_2022.01.xlsx'), 
+                          sheet = 2) %>% janitor::clean_names() %>% 
+  # Convert variable class to factor
+  mutate(fips = as.factor(fips))
+
+pids_fips_df <- fips_analysis_df %>%
+  left_join(rci, by = 'fips') %>%
+  rename(rci = rural_capacity_index,
+         state = state.x) %>%
+  # Remove variables
+  dplyr::select(-c(name, state.y)) %>%
+  # Convert variable class to factor
+  mutate(fips = as.factor(fips)) %>% 
+  # Move variable position in data frame
+  relocate(geometry, .after = last_col())
+```
+
+Save as .csv:
+```{r}
+write.csv(pids_fips_df, here::here('pids_fips_econ.csv'), row.names = FALSE)
+```
+
+# Energy Communities
+```{r}
+# Read shapefile data frame
+coal_mines <- st_read(here::here('ira_energy_communities_data',
+                                 'closed_coal_mines',
+                                 'closed_coal_mines.shp')) %>% 
+  # Set CRS to NAD83
+  st_transform(4269)
+
+# Read shapefile data frame
+coal_plants <- st_read(here::here('ira_energy_communities_data',
+                                  'retired_coal_plants',
+                                  'retired_coal_plants.shp')) %>%
+  # Set CRS to NAD83
+  st_transform(4269)
+
+# Subset to projects within U.S. census tracts with coal mines
+pids_coal_mines <- st_join(us_pids_geom, coal_mines, 
+                           join = st_within) %>% 
+  drop_na() %>% 
+  # Add binary column for energy community status
+  mutate(energy_community = 1)
+
+# Subset to projects within U.S. census tracts with coal plants
+pids_coal_plants <- st_join(us_pids_geom, coal_plants, 
+                            join = st_within) %>% 
+  drop_na() %>%
+  # Add binary column for energy community status
+  mutate(energy_community = 1)
+
+# Bind coal mine and coal plant subsets by rows
+pids_ira <- rbind(pids_coal_mines, pids_coal_plants) %>%
+  # Organize in ascending order
+  arrange(PID) %>%
+  # Keep unique projects
+  distinct(PID, .keep_all = TRUE) %>%
+  st_drop_geometry() %>%
+  # Select variables of interest
+  dplyr::select(PID, energy_community)
+
+pids_techno_econ <- pids_fips_df %>%
+  left_join(pids_ira, by = 'PID') %>%
+  # Move variable position in data frame
+  relocate(geometry, .after = last_col()) 
+
+# Set NA values in binary column for energy community status to 0
+pids_techno_econ$energy_community <- 
+  pids_techno_econ$energy_community %>% replace_na(0)
+```
+
+Save as .csv:
+```{r}
+write.csv(pids_techno_econ, here::here('pids_techno_econ.csv'), row.names = FALSE)
+```
+
+# Environmental Impact Score 
+```{r}
+# Read raster object 
+env_sens_tif <- stars::read_stars(here::here('env_impact_v2_PV_ih10_masked.tif'))
+
+# Create vector object of USWTDB data and set CRS from raster object
+us_pids_geom_crs <- st_transform(us_pids_geom, st_crs(env_sens_tif))
+
+# Extract raster object values associated with project locations 
+pids_env_sens <- stars::st_extract(env_sens_tif, us_pids_geom_crs)
+
+# Join extracted values to vector object
+pids_env_sens_df <- st_join(us_pids_geom_crs, pids_env_sens) %>%
+  rename(env_sens_score = env_impact_v2_PV_ih10_masked.tif) 
+```
+
+Save as .csv:
+```{r}
+write.csv(full_join_df, here::here('pids_full_join.csv'), row.names = FALSE)
+```
+
+
+```{r}
+wattmaps_dat <- read_csv(here::here('wattmaps_dat_1288_final.csv'))
+```
+
+# U.S. Regions 
+```{r}
+new_england <- as_tibble(usmap::.new_england) %>%
+  rename(state = value) %>%
+  mutate(region = 'New England')
+
+mid_atlantic <- as_tibble(usmap::.mid_atlantic) %>%
+  rename(state = value) %>%
+  mutate(region = 'Mid Atlantic')
+
+east_north_central <- as_tibble(usmap::.east_north_central) %>%
+  rename(state = value) %>%
+  mutate(region = 'East North Central')
+
+west_north_central <- as_tibble(usmap::.west_north_central) %>%
+  rename(state = value) %>%
+  mutate(region = 'West North Central')
+
+south_atlantic <- as_tibble(usmap::.south_atlantic) %>%
+  rename(state = value) %>%
+  mutate(region = 'South Atlantic')
+
+east_south_central <- as_tibble(usmap::.east_south_central) %>%
+  rename(state = value) %>%
+  mutate(region = 'East South Central')
+
+west_south_central <- as_tibble(usmap::.west_south_central) %>%
+  rename(state = value) %>%
+  mutate(region = 'West South Central')
+
+mountain <- as_tibble(usmap::.mountain) %>%
+  rename(state = value) %>%
+  mutate(region = 'Mountain')
+
+pacific <- as_tibble(usmap::.pacific) %>%
+  rename(state = value) %>%
+  mutate(region = 'Pacific')
+```
+
+```{r}
+# Create U.S. region data frame
+region_df <- rbind(new_england, mid_atlantic, 
+                   east_north_central, west_north_central, 
+                   west_south_central, east_south_central,
+                   south_atlantic, mountain, pacific)  %>%
+  # Convert variable class to factor
+  mutate(state = as.factor(state))
+
+region_pids_df <- pids_env_sens_df %>%
+  # Convert variable class to factor
+  mutate(state = as.factor(state)) %>%
+  left_join(region_df, by = 'state')
+
+# Check NAs
+# region_pids_df[is.na(region_pids_df$region), ]
+
+# Manually remove observations that fail DQA standards 
+onshore_pids_full_df <- region_pids_df %>%
+  filter(!pid %in% c('1322','1323', '1324', '1326', '1327', '1330'),
+         !is.na(slr_wn),
+         slr_wn != 0) %>%
+  # Move variable position in data frame
+  relocate(region, .after = state)
+```
+
+# Final Join
+```{r}
+# Read data frame of model estimates
+op_ratios <- read_csv(here::here('optimal_ratios_project_info.csv'))
+
+# Read data frame
+substation_pids_df <- read_csv(here::here(
+  'substation_pids.csv')) %>% janitor::clean_names()
+```
+
+```{r}
+pids_tec_df <- pids_techno_econ %>%
+  # Remove variable
+  dplyr::select(-c(geometry)) %>%
+  # Change variable names to snake_case
+  janitor::clean_names()
+
+pids_tec_trans_df <- op_ratios %>%
+  left_join(pids_tec_df, by = 'pid') %>% 
+  left_join(substation_pids_df, by = 'pid') %>%
+  # Change variable names to snake_case
+  rename(dac_sts = dacsts,
+         energy_brdn = energybrdn,
+         foss_emplmt = fossemplmt,
+         coal_emplmt = coalemplmt,
+         outage_n = outagecnt,
+         outage_dur = outagedur)
+
+full_join_df <- pids_env_sens_df %>% 
+  # Remove geometry for join 
+  st_drop_geometry() %>%
+  # Change variable names to snake_case
+  janitor::clean_names() %>%
+  left_join(pids_tec_trans_df, by = 'pid') %>%
+  # Move variable position in data frame
+  relocate(env_sens_score, .after = state) %>%
+  # Move variable position in data frame
+  relocate(p_name, .after = pid) %>%
+  # Move variable position in data frame
+  relocate(p_year, .after = p_name) 
+
+wattmaps_df <- full_join_df %>%
+  # Unlist point coordinates for export
+  mutate(lon = unlist(map(full_join_df$geometry, 1)),
+         lat = unlist(map(full_join_df$geometry, 2))) %>%
+  st_drop_geometry() %>%
+  # Remove variables
+  dplyr::select(-c(t_state, t_county, sid, lines, t_rd, distance_m))
+
+write.csv(wattmaps_df, here::here('wattmaps_dat.csv'), row.names = FALSE)
+```
+

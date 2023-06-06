@@ -1,0 +1,348 @@
+---
+title: 'Maps and Plots'
+author: 'Alessandra Vidal Meza, Michelle Lam, Colleen McCamy'
+date: '`r Sys.Date()`'
+---
+
+```{r}
+library(here)
+library(tidyverse)
+library(ggridges)
+library(spData)
+library(sf) 
+# devtools::install_github('oswaldosantos/ggsn')
+```
+
+```{r}
+# Read final data product
+dat <- read_csv(here::here('wattmaps_dat.csv'))
+
+# Read pre-processed USWTDB data
+us_pids <- read_csv(here::here('us_PID_cords_PID1335.csv'))
+```
+
+# Map of USWTDB Turbines in Contigious U.S. 
+```{r}
+# Extract world polygon from spData
+world <- st_read(system.file('shapes/world.gpkg', package = 'spData')) %>%
+  # Set CRS to NAD83
+  st_transform(4269)
+
+# Filter to keep polygons for Canada, Mexico, and the U.S. 
+north_america <- world %>%
+  filter(name_long %in% c('Canada', 'Mexico', 'United States')) %>%
+  # Set CRS to NAD83
+  st_transform(4269)
+
+# Set CRS to NAD83 for U.S. state polygons
+us_states <- spData::us_states %>% st_transform(4269)
+
+us_pid_map <- ggplot() + 
+  geom_sf(data = north_america, col = 1, fill = '#e5e5e5') +
+  geom_sf(data = us_states, fill = '#e5e5e5', size = 8) +
+  coord_sf(xlim = c(-125, -67), ylim = c(25.75, 50)) +
+  geom_point(data = us_pids, aes(x = lon, y = lat), 
+             size = 2, col = '#e63946', alpha = 0.5) +
+  theme(panel.background = element_rect(fill = '#ADD8E6'),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = 'transparent', color = NA)) +
+  scale_x_continuous(breaks = c(-120, -70)) +
+  scale_y_continuous(breaks = c(25, 50)) +
+  ggsn::scalebar(north_america, dist = 300, dist_unit = 'km', 
+                 transform = TRUE, model = 'WGS84',
+                 location = 'bottomright',
+                 height = 0.01,
+                 st.size = 2.5, st.dist = 0.01,
+                 st.bottom = TRUE, st.color = '#333533',
+                 box.fill = c('#333533', '#F5F9FA'),
+                 box.color = '#333533', border.size = 0.5,
+                 anchor = c(x = -118, y = 27)) +
+  labs(x = NULL, y = NULL)
+
+# Export map with transparent background
+ggsave(here::here('us_pid_map.png'), us_pid_map, bg = 'transparent')
+```
+
+# Histogram of Optimal Ratios
+```{r}
+ratio_histogram <- ggplot(dat, aes(x = slr_wn)) +
+  geom_histogram(bins = round(sqrt(nrow(slr_wn_ratios))), 
+                 fill = '#F4A261',
+                 color = '#E76F51') +
+  labs(title = 'Distribution of Solar to Wind Ratios',
+       x = 'Solar to Wind Ratio',
+       y = 'Frequency') +
+  theme_minimal() +
+  theme(legend.position = 'none',
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  theme(panel.background =
+          element_rect(fill = 'transparent'),
+        plot.background = element_rect(fill =
+                                         'transparent', color = NA),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+# Export plot with transparent background
+ggsave(here::here('ratio_distribution.png'), ratio_histogram, bg = 'transparent') 
+```
+
+# Lollipop Plot of Total Solar Capacity in Top States
+```{r}
+# Create data frame with U.S. state names
+state_names <- as.data.frame(state.name) %>% 
+  # Add U.S. state abbreviations
+  bind_cols(state.abb) %>% 
+  rename(state_name = state.name, 
+         state = ...2)
+
+# Add U.S. state names to final data frame for visualization
+pid_state <- left_join(dat, state_names, by = 'state')
+
+solar_cap_state <- pid_state %>% 
+  group_by(state_name) %>% 
+  # Find number of projects and total solar capacity by state
+  summarize(count = n(),
+            total = sum(slr_cpc, na.rm = TRUE)) %>% 
+  # Unit conversion of total solar capacity  
+  mutate(total_gw = total/1000,
+         total_gw_rounded = round(total_gw, 2)) %>% 
+  # Remove NA values for states
+  filter(!is.na(state_name)) %>% 
+  # Organize in ascending order
+  arrange(total) %>% 
+  mutate(state_name = factor(state_name, levels = state_name))
+
+solar_cap_state %>%
+  # Keep top 10 observations for total solar capacity  
+  top_n(10, total) %>%
+  ggplot(aes(x = state_name, y = total_gw_rounded)) +
+  # Add segments for lollipop
+  geom_segment(aes(x = state_name, xend = state_name, 
+                   y = 0, yend = total_gw_rounded), 
+               color = '#F4A261', size = 1.5) +
+  geom_point(size = 20, color = '#F4A261') +
+  geom_text(aes(label = total_gw_rounded), size = 5, color = '#264653') +
+  coord_flip() +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 16, color = '#264653'),
+        axis.text.x = element_text(size = 16, color = '#264653'),
+        axis.title = element_text(size = 20, color = '#264653'),
+        plot.title = element_text(size = 24, color = '#264653'),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(x = NULL, y = 'Total potential solar capacity (GW)')
+
+# Export plot with set width, height, and resolution
+ggsave(here::here('solar_cap_top_states.jpeg'), width = 12, height = 8, dpi = 300)
+```
+
+# Histogram of Environmental Impact Score
+```{r}
+# Define color palette for regions
+region_colors <- c('#B3D1DC', '#67A2B9', '#5496B1', '#4987A0', 
+                   '#41778D', '#38677A', '#2F5767', '#264653')
+
+region_hist <- dat %>%
+  # Remove East South Central due to low number of observations
+  filter(!region == 'East South Central') %>%
+  # Plot impact score by region and color by region
+  ggplot(aes(x = env_sens_score, y = region, fill = region)) +
+  # Add color transparency 
+  geom_density_ridges(alpha = 0.9) +
+  # Change x-axis scale
+  scale_x_continuous(breaks = seq(0, 150, 25)) +
+  # Add color palette for regions
+  scale_discrete_manual(values = region_colors, 
+                        aesthetics = 'fill') +
+  theme_ridges() + 
+  theme(legend.position = 'none',
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  theme(panel.background = 
+          element_rect(fill = 'transparent'),
+        plot.background = element_rect(fill = 
+                                         'transparent', color = NA),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+# Export plot with transparent background
+ggsave(here::here('region-env-sens.png'), region_hist, bg = 'transparent')
+```
+
+# Lollipop Plot of Solar Capacity in Energy Communities
+```{r}
+lollipop_energy_com <- dat %>%
+  # Keep observations only for energy communities 
+  filter(energy_community == 1) %>%
+  group_by(state) %>%
+  # Find mean solar capacity  
+  summarize(avg_slr_cpc = mean(slr_cpc, na.rm = TRUE)) %>%
+  # Organize in ascending order
+  arrange(avg_slr_cpc) %>%
+  # Change variable to class factor by states 
+  mutate(state = factor(state, levels = state)) %>%  
+  # Keep top 10 observations for mean solar capacity  
+  top_n(10, avg_slr_cpc) %>%
+  ggplot(aes(x = state, y = avg_slr_cpc,
+             # Add labels for mean solar capacity by state
+             label = paste0(round(avg_slr_cpc, digits = 1)))) +
+  # Add segments for lollipop
+  geom_segment(aes(x = state, xend = state, 
+                   y = 0, yend = avg_slr_cpc),
+               color = '#67A2B9',
+               linewidth = 1) +
+  geom_point(color = '#264653', size = 20) +
+  geom_text(color = '#F5F9FA', size = 5) +
+  theme_light() +
+  coord_flip() +
+  theme(legend.position = 'none',
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  theme(panel.background = element_rect(fill = 'transparent'),
+        panel.border = element_blank(),
+        plot.background = element_rect(fill = 
+                                         'transparent', color = NA),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+# Export plot with transparent background
+ggsave(here::here('lol-energy-com.png'), lollipop_energy_com, bg = 'transparent', 
+       width = 12, height = 8, dpi = 300)
+```
+
+# Histogram of RCI in Energy Communities by State
+```{r}
+# Define states of interest
+states_vec <- c('TX', # 'MO', 'KS', 'IN',
+                'WA', 'CA', 'OR',
+                'IL', 'WV', 'MI')
+
+# Define color palette for states
+state_colors <- c('#B3D1DC', '#67A2B9', 
+                  '#5496B1', '#4987A0', '#41778D', 
+                  '#38677A', '#264653')
+
+state_hist <- dat %>%
+  filter(energy_community == 1) %>%
+  mutate(state = as.factor(state)) %>%
+  filter(state %in% states_vec) %>%
+  ggplot(aes(x = rci, y = state, fill = state)) +
+  geom_density_ridges(alpha = 0.9) +
+  scale_x_continuous(breaks = seq(0, 100, 25)) +
+  scale_discrete_manual(values = state_colors, 
+                        aesthetics = 'fill') +
+  theme_ridges() + 
+  theme(legend.position = 'none',
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  theme(panel.background = 
+          element_rect(fill = 'transparent'),
+        plot.background = element_rect(fill = 
+                                         'transparent', color = NA),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+# Export plot with transparent background
+ggsave(here::here('state_rci_hist.png'), state_hist, bg = 'transparent')
+```
+
+# Map of Average Ratio by State, Color by Region
+```{r}
+# Find average ratio by state
+us_state_avgs <- dat %>% group_by(state) %>%
+  summarize(avg_slr_wn = mean(slr_wn, na.rm = TRUE))
+
+# Define color palette for U.S. regions
+us_region_colors <- c('#F94144', '#F9844A', '#F8961E', '#F9C74F',
+                      '#90BE6D', '#43AA8B', '#4D908E',
+                      '#577590', '#277DA1')
+
+us_region_map <- ggplot() + 
+  geom_sf(data = north_america, col = 1, fill = '#e5e5e5') +
+  geom_sf(data = us_states_regions, aes(fill = region), size = 8) +
+  ggrepel::geom_label_repel(data = us_state_avgs,
+                            aes(x = lon, y = lat, 
+                                label = paste0(round(avg_slr_wn, 2))),
+                            size = 2.5, alpha = 0.8,
+                            label.r = unit(0.3, 'lines'), label.size = 0.1,
+                            segment.color = '#333533', segment.size = 0.5) +
+  coord_sf(xlim = c(-125, -67), ylim = c(25.75, 50)) +
+  theme(panel.background = element_rect(fill = '#ADD8E6'),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = 'transparent', color = NA),
+        legend.position = 'bottom', 
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = '#F5F9FA', 
+                                         color = '#333533'),
+        legend.text = element_text(size = 6)) +
+  scale_discrete_manual(values = us_region_colors, aesthetics = 'fill', 
+                        na.translate = FALSE, 
+                        guide = guide_legend(nrow = 3)) +
+  scale_x_continuous(breaks = c(-120, -70)) +
+  scale_y_continuous(breaks = c(25, 50)) +
+  ggsn::scalebar(north_america, dist = 300, dist_unit = 'km', 
+                 transform = TRUE, model = 'WGS84',
+                 location = 'bottomright',
+                 height = 0.01,
+                 st.size = 2.5, st.dist = 0.01,
+                 st.bottom = TRUE, st.color = '#333533',
+                 box.fill = c('#333533', '#F5F9FA'),
+                 box.color = '#333533', border.size = 0.5,
+                 anchor = c(x = -118, y = 27)) +
+  labs(x = NULL, y = NULL)
+
+# Export map with transparent background
+ggsave(here::here('us_region_ratio_map.png'), us_region_map, bg = 'transparent')
+```
+
+# Inflation Reduction Act
+```{r}
+pids_ira_df <- state_hist <- dat %>%
+  filter(energy_community == 1) %>% 
+  st_drop_geometry()
+
+ira_pids_map <- ggplot() + 
+  geom_sf(data = north_america, 
+          fill = '#e5e5e5', color = '#333533') + 
+  geom_sf(data = us_states, fill = '#e5e5e5',
+          linewidth = 0.4, colour = '#333533') +
+  coord_sf(xlim = c(-125, -67), ylim = c(25.75, 50)) +
+  geom_point(data = pids_ira_df, aes(x = lon, y = lat), 
+             size = 2, col = '#e63946', alpha = 0.65) +
+  theme(panel.background = element_rect(fill = '#ADD8E6'),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = 'transparent', color = NA)) +
+  scale_x_continuous(breaks = c(-120, -70)) +
+  scale_y_continuous(breaks = c(25, 50)) +
+  ggsn::scalebar(north_america, dist = 300, dist_unit = 'km', 
+                 transform = TRUE, model = 'WGS84',
+                 location = 'bottomright',
+                 height = 0.01,
+                 st.size = 2.5, st.dist = 0.01,
+                 st.bottom = TRUE, st.color = '#333533',
+                 box.fill = c('#333533', '#F5F9FA'),
+                 box.color = '#333533', border.size = 0.5,
+                 anchor = c(x = -118, y = 27)) +
+  labs(x = NULL, y = NULL)
+
+# Export plot with transparent background
+ggsave(here::here('ira_pid_map.png'), ira_pids_map, bg = 'transparent')
+```

@@ -1,0 +1,111 @@
+---
+title: 'Summary Statistics for Existing Wind Projects'
+author: 'Alessandra Vidal Meza'
+date: '`r Sys.Date()`'
+---
+
+```{r}
+library(here)
+library(tidyverse)
+library(sf)
+```
+
+```{r}
+dat <- read_csv(here::here('wattmaps_dat.csv'))
+```
+
+# Disadvantaged Communtiies 
+```{r}
+# Find number of projects in non-Disadvantaged Communities 
+dat %>% st_drop_geometry() %>% 
+  filter(dacsts == 0) %>% summarize(n())
+
+# Find number of projects in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>% 
+  filter(dacsts == 1) %>% summarize(n())
+
+# Find mean energy burden in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dacsts == 1) %>% summarize(mean(energybrdn))
+
+# Find mean RCI in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dacsts == 1) %>% summarize(mean(rci, na.rm = TRUE))
+
+# Find mean percent fossil employment in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dacsts == 1) %>% summarize(mean(fossemplmt, na.rm = TRUE))
+
+# Find mean percent coal employment in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dacsts == 1) %>% summarize(mean(coalemplmt, na.rm = TRUE))
+
+# Find sum of number of outage events in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dacsts == 1) %>% summarize(sum(outagecnt))
+
+# Find sum of number of outage minutes in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dacsts == 1) %>% summarize(sum(outagedur))
+
+# Find sum of solar capacity in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dac_sts == 1) %>% summarize(sum(slr_cpc))
+
+# Find mean revenue in Disadvantaged Communities 
+dat %>% st_drop_geometry() %>%
+  filter(dacsts == 1) %>% summarize(mean(revenue, na.rm = TRUE))
+```
+
+# Energy Communities
+```{r}
+# Find mean RCI in Energy Communities 
+dat %>% st_drop_geometry() %>%
+  filter(energy_community == 1 ) %>%
+  summarize(mean(rci, na.rm = TRUE))
+
+# Find number of projects in Energy Communities 
+dat %>% st_drop_geometry() %>%
+  filter(energy_community == 1 ) %>%
+  summarize(n())
+
+# Find sum of solar capacity in Energy Communities
+dat %>% st_drop_geometry() %>%
+  filter(energy_community == 1 ) %>%
+  summarize(sum(slr_cpc))
+
+# Find mean revenue in Energy Communities 
+dat %>% st_drop_geometry() %>%
+  filter(energy_community == 1) %>% summarize(mean(revenue, na.rm = TRUE))
+```
+
+# Environmental Impact Score
+```{r}
+dat %>% st_drop_geometry() %>%
+  # Group projects by region and find mean impact score
+  group_by(region) %>% summarize(mean = mean(env_sens_score, 
+                                             na.rm = TRUE),
+                                 # Find number of projects by region
+                                 count = n())
+
+# Find and extract scalar value for total solar capacity
+total_slr_cpc <- sum(dat$slr_cpc)
+
+# Find weighted mean impact score by percent of total solar capacity
+dat %>% summarize(avg_env_sens = weighted.mean(env_sens_score, total_slr_cpc))
+
+# Find weighted mean impact score by solar capacity 
+dat %>% summarize(avg_env_sens = weighted.mean(env_sens_score, slr_cpc))
+
+# Add value for impact score by solar capacity weight factor
+df <- dat %>% mutate(env_weighted = env_sens_score*slr_cpc) %>%
+  relocate(env_weighted, .after = env_sens_score)
+
+# Find sum of weighted impact scores 
+sum_env_weighted <- sum(df$env_weighted)
+
+# Find mean from sum of weighted impact scores by the sum of all weight factors
+weighted_mean <- weighting_factor/total_slr_cpc
+```
+
+
