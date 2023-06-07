@@ -1,6 +1,7 @@
 # Analysis
 
-This repository contains R Markdown notebooks for techno-economic analysis and data visualization within respective folders. Each folder also holds a `data` sub-folder with relevant data objects to the notebooks in the parent folder. 
+This repository contains R Markdown notebooks for techno-economic analysis and data visualization within respective folders. 
+Each folder also holds a `data` sub-folder with relevant data objects to the notebooks in the parent folder. 
 
 .
 ├── data-visualization
