@@ -17,8 +17,7 @@ library(sf)
 Load point coordinates of existing wind projects in the U.S.: 
 ```{r}
 # Read tabular data frame
-us_pids <- read_csv(here::here('techno-economic', 
-                               'data', 'us_PID_cords_PID1335.csv'))
+us_pids <- read_csv(here::here('data', 'us_PID_cords_PID1335.csv'))
 us_pids <- as.data.frame(us_pids) 
 # Convert to shapefile data frame with CRS as NAD83
 us_pids_geom <- st_as_sf(us_pids, coords = c('lon', 'lat'), crs = 4269)
@@ -107,8 +106,7 @@ write.csv(pids_counties_df, here::here('US_pids_fips.csv'), row.names = FALSE)
 # Disadvantaged Communities
 ```{r}
 # Read shapefile data frame
-dac <- st_read(here::here('techno-economic', 'data',
-                          'DACShapefiles_v2022c', 
+dac <- st_read(here::here('data', 'DACShapefiles_v2022c', 
                           'DACShapefiles_v2022c.shp'))
 
 # Define function to calculate mode
@@ -175,8 +173,7 @@ fips_analysis_df <- fips_analysis_df %>%
 # Rural Capacity Index
 ```{r}
 # Read Excel object
-rci <- readxl::read_excel(here::here('techno-economic', 'data',
-                                     'rural-capacity-index',
+rci <- readxl::read_excel(here::here('data', 'rural-capacity-index',
                                      'HE_Rural_Capacity_Index_2022_01.xlsx'), 
                           sheet = 2) %>% janitor::clean_names() %>% 
   # Convert variable class to factor
@@ -202,16 +199,14 @@ write.csv(pids_fips_df, here::here('pids_fips_econ.csv'), row.names = FALSE)
 # Energy Communities
 ```{r}
 # Read shapefile data frame
-coal_mines <- st_read(here::here('techno-economic', 'data',
-                                 'ira_energy_communities_data',
+coal_mines <- st_read(here::here('data', 'ira_energy_communities_data',
                                  'closed_coal_mines',
                                  'closed_coal_mines.shp')) %>% 
   # Set CRS to NAD83
   st_transform(4269)
 
 # Read shapefile data frame
-coal_plants <- st_read(here::here('techno-economic', 'data',
-                                  'ira_energy_communities_data',
+coal_plants <- st_read(here::here('data', 'ira_energy_communities_data',
                                   'retired_coal_plants',
                                   'retired_coal_plants.shp')) %>%
   # Set CRS to NAD83
@@ -259,8 +254,7 @@ write.csv(pids_techno_econ, here::here('pids_techno_econ.csv'), row.names = FALS
 # Environmental Impact Score 
 ```{r}
 # Read raster object 
-env_sens_tif <- stars::read_stars(here::here('techno-economic', 'data',
-                                             'env_impact_v2_PV_ih10_masked.tif'))
+env_sens_tif <- stars::read_stars(here::here('data', 'env_impact_v2_PV_ih10_masked.tif'))
 
 # Create vector object of USWTDB data and set CRS from raster object
 us_pids_geom_crs <- st_transform(us_pids_geom, st_crs(env_sens_tif))
@@ -341,12 +335,10 @@ onshore_pids_full_df <- region_pids_df %>%
 # Final Join
 ```{r}
 # Read data frame of model estimates
-op_ratios <- read_csv(here::here('techno-economic', 'data',
-                                 'optimal_ratios_project_info.csv'))
+op_ratios <- read_csv(here::here('data', 'optimal_ratios_project_info.csv'))
 
 # Read data frame
-substation_pids_df <- read_csv(here::here('techno-economic', 'data',
-                                          'substation_pids.csv')) %>% janitor::clean_names()
+substation_pids_df <- read_csv(here::here('data', 'substation_pids.csv')) %>% janitor::clean_names()
 ```
 
 ```{r}

@@ -11,7 +11,7 @@ library(sf)
 ```
 
 ```{r}
-dat <- read_csv(here::here('techno-economic', 'data', 'wattmaps_dat.csv'))
+dat <- read_csv(here::here('data', 'wattmaps_dat.csv'))
 ```
 
 # Disadvantaged Communtiies 
