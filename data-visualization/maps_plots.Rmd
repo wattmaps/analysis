@@ -15,10 +15,12 @@ library(sf)
 
 ```{r}
 # Read final data product
-dat <- read_csv(here::here('wattmaps_dat.csv'))
+dat <- read_csv(here::here('data-visualization', 
+                           'data', 'wattmaps_dat.csv'))
 
 # Read pre-processed USWTDB data
-us_pids <- read_csv(here::here('us_PID_cords_PID1335.csv'))
+us_pids <- read_csv(here::here('data-visualization', 'data',
+                               'us_PID_cords_PID1335.csv'))
 ```
 
 # Map of USWTDB Turbines in Contigious U.S. 
