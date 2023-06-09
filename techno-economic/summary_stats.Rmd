@@ -1,6 +1,6 @@
 ---
 title: 'Summary Statistics for Existing Wind Projects'
-author: 'Alessandra Vidal Meza'
+author: 'https://github.com/wattmaps'
 date: '`r Sys.Date()`'
 ---
 

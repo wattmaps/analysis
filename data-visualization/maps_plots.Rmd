@@ -1,6 +1,6 @@
 ---
 title: 'Maps and Plots'
-author: 'Alessandra Vidal Meza, Michelle Lam, Colleen McCamy'
+author: 'https://github.com/wattmaps'
 date: '`r Sys.Date()`'
 ---
 

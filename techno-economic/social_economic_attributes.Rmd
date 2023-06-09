@@ -1,6 +1,6 @@
 ---
 title: 'Relational Social and Economic Attributes'
-author: 'Alessandra Vidal Meza'
+author: 'https://github.com/wattmaps'
 date: '`r Sys.Date()`'
 ---
 
@@ -14,7 +14,8 @@ library(stars)
 library(sf)
 ```
 
-Load point coordinates of existing wind projects in the U.S.: 
+Load point coordinates of existing wind projects in the U.S.:
+
 ```{r}
 # Read tabular data frame
 us_pids <- read_csv(here::here('data', 'us_PID_cords_PID1335.csv'))
@@ -23,7 +24,8 @@ us_pids <- as.data.frame(us_pids)
 us_pids_geom <- st_as_sf(us_pids, coords = c('lon', 'lat'), crs = 4269)
 ```
 
-# U.S. County and State Data 
+# U.S. County and State Data
+
 ```{r}
 library(tidycensus)
 # census_api_key('INSERT KEY')
@@ -99,11 +101,13 @@ pids_counties_df_geom <- pids_counties_df %>%
 ```
 
 Save as .csv:
+
 ```{r}
 write.csv(pids_counties_df, here::here('US_pids_fips.csv'), row.names = FALSE)
 ```
 
 # Disadvantaged Communities
+
 ```{r}
 # Read shapefile data frame
 dac <- st_read(here::here('data', 'DACShapefiles_v2022c', 
@@ -171,6 +175,7 @@ fips_analysis_df <- fips_analysis_df %>%
 ```
 
 # Rural Capacity Index
+
 ```{r}
 # Read Excel object
 rci <- readxl::read_excel(here::here('data', 'rural-capacity-index',
@@ -192,11 +197,13 @@ pids_fips_df <- fips_analysis_df %>%
 ```
 
 Save as .csv:
+
 ```{r}
 write.csv(pids_fips_df, here::here('pids_fips_econ.csv'), row.names = FALSE)
 ```
 
 # Energy Communities
+
 ```{r}
 # Read shapefile data frame
 coal_mines <- st_read(here::here('data', 'ira_energy_communities_data',
@@ -247,11 +254,13 @@ pids_techno_econ$energy_community <-
 ```
 
 Save as .csv:
+
 ```{r}
 write.csv(pids_techno_econ, here::here('pids_techno_econ.csv'), row.names = FALSE)
 ```
 
-# Environmental Impact Score 
+# Environmental Impact Score
+
 ```{r}
 # Read raster object 
 env_sens_tif <- stars::read_stars(here::here('data', 'env_impact_v2_PV_ih10_masked.tif'))
@@ -267,7 +276,8 @@ pids_env_sens_df <- st_join(us_pids_geom_crs, pids_env_sens) %>%
   rename(env_sens_score = env_impact_v2_PV_ih10_masked.tif) 
 ```
 
-# U.S. Regions 
+# U.S. Regions
+
 ```{r}
 new_england <- as_tibble(usmap::.new_england) %>%
   rename(state = value) %>%
@@ -333,6 +343,7 @@ onshore_pids_full_df <- region_pids_df %>%
 ```
 
 # Final Join
+
 ```{r}
 # Read data frame of model estimates
 op_ratios <- read_csv(here::here('data', 'optimal_ratios_project_info.csv'))
@@ -382,4 +393,3 @@ wattmaps_df <- full_join_df %>%
 
 write.csv(wattmaps_df, here::here('wattmaps_dat.csv'), row.names = FALSE)
 ```
-
